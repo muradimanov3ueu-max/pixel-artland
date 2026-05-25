@@ -57,16 +57,14 @@
             background: rgba(0, 0, 0, 0.85);
             padding: 10px 12px;
             border-radius: 14px;
-            overflow-x: auto; /* Позволяет листать цвета пальцем */
+            overflow-x: auto;
             width: 100%;
             box-sizing: border-box;
             box-shadow: 0 4px 15px rgba(0,0,0,0.5);
             border: 1px solid #333;
-            /* Плавный скролл на смартфонах */
             -webkit-overflow-scrolling: touch; 
         }
         
-        /* Прячем полосу прокрутки, чтобы было красиво */
         .palette::-webkit-scrollbar { 
             display: none; 
         }
@@ -75,7 +73,7 @@
             width: 34px;
             height: 34px;
             border-radius: 8px;
-            flex-shrink: 0; /* Не дает кнопкам сжиматься */
+            flex-shrink: 0;
             cursor: pointer;
             border: 2px solid transparent;
             box-sizing: border-box;
@@ -87,7 +85,7 @@
             box-shadow: 0 0 10px rgba(255,255,255,0.9);
         }
 
-        /* Кнопки управления (Зум, Пипетка) */
+        /* Кнопки управления */
         .controls {
             display: flex;
             gap: 12px;
@@ -113,6 +111,9 @@
         
         .btn-eyedropper { background: #2b5c8f; border-color: #3b7cbd; }
         .btn-eyedropper.active { background: #00ffcc; color: #000; border-color: #fff; }
+        
+        /* Кнопка очистки мира */
+        .btn-clear { background: #8f2b2b; border-color: #bd3b3b; }
     </style>
 </head>
 <body>
@@ -128,6 +129,7 @@
             <button class="btn btn-eyedropper" id="eyedropperBtn">💧 Пипетка</button>
             <button class="btn" id="zoomOut">−</button>
             <button class="btn" id="zoomIn">+</button>
+            <button class="btn btn-clear" id="clearBtn">🗑️ Очистить</button>
         </div>
     </div>
 
@@ -137,6 +139,7 @@
         const coordsDisplay = document.getElementById('coordsDisplay');
         const paletteContainer = document.getElementById('palette');
         const eyedropperBtn = document.getElementById('eyedropperBtn');
+        const clearBtn = document.getElementById('clearBtn');
 
         const WORLD_SIZE = 1000;
         canvas.width = WORLD_SIZE;
@@ -153,9 +156,8 @@
         let hasMoved = false;
 
         let isEyedropperMode = false;
-        let currentColor = '#e50000'; // Начнем с красного
+        let currentColor = '#e50000';
 
-        // БОЛЬШОЙ НАБОР ПРОФЕССИОНАЛЬНЫХ ЦВЕТОВ (38 штук)
         const presetColors = [
             '#ffffff', '#e4e4e4', '#a5a5a5', '#7e7e7e', '#4e4e4e', '#222222', '#000000',
             '#ffa7d1', '#ff5b97', '#e50000', '#990000', '#ff7816', '#e59500', '#ffd27b',
@@ -165,9 +167,14 @@
             '#ffe5b4', '#ffcfdf', '#eac4d5'
         ];
 
-        const worldData = [];
+        // МАССИВ ПИКСЕЛЕЙ (Загружаем из памяти телефона, если они там есть)
+        let worldData = JSON.parse(localStorage.getItem('pixelWorldSave')) || [];
 
-        // Создание элементов палитры
+        // Функция сохранения мира в память телефона
+        function saveWorld() {
+            localStorage.setItem('pixelWorldSave', JSON.stringify(worldData));
+        }
+
         function initPalette() {
             paletteContainer.innerHTML = '';
             presetColors.forEach(color => {
@@ -223,6 +230,8 @@
             const worldX = (clientX - offsetX) / scale;
             const worldY = (clientY - offsetY) / scale;
             scale = newScale;
+            offsetX = clientX - worldX * scale;
+            offsetY = clientY - usage = worldY * scale;
             offsetX = clientX - worldX * scale;
             offsetY = clientY - worldY * scale;
             draw();
@@ -287,8 +296,6 @@
                             currentColor = found ? found.color : '#ffffff';
                             isEyedropperMode = false;
                             eyedropperBtn.classList.remove('active');
-                            
-                            // Перерисовываем палитру, чтобы выделить скопированный цвет, если он там есть
                             initPalette();
                             return;
                         }
@@ -299,7 +306,9 @@
                         } else {
                             worldData.push({ x: worldX, y: worldY, color: currentColor });
                         }
+                        
                         draw();
+                        saveWorld(); // КРИТИЧЕСКОЕ ИЗМЕНЕНИЕ: сохраняем при каждом клике!
                     }
                 }
             }
@@ -310,10 +319,19 @@
             eyedropperBtn.classList.toggle('active', isEyedropperMode);
         });
 
+        // КНОПКА ОЧИСТКИ ВСЕГО МИРА
+        clearBtn.addEventListener('click', () => {
+            if (confirm("Вы уверены, что хотите полностью очистить свой рисунок?")) {
+                worldData = [];
+                saveWorld();
+                draw();
+            }
+        });
+
         document.getElementById('zoomIn').addEventListener('click', () => { zoomAtPoint(1.4, window.innerWidth / 2, window.innerHeight / 2); });
         document.getElementById('zoomOut').addEventListener('click', () => { zoomAtPoint(1 / 1.4, window.innerWidth / 2, window.innerHeight / 2); });
 
-        // Запуск системы
+        // Старт
         initPalette();
         resizeCanvas();
     </script>
