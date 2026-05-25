@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Pixel World</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #1a1a1a;
+            color: #fff;
+            font-family: sans-serif;
+            overflow: hidden;
+            user-select: none;
+        }
+        canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            image-rendering: pixelated;
+            background-color: #ffffff;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+        }
+        .coords {
+            position: fixed;
+            top: 15px;
+            left: 15px;
+            background: rgba(0, 0, 0, 0.75);
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-family: monospace;
+            z-index: 10;
+            border: 1px solid #444;
+        }
+
+        /* ИГРОВАЯ ПАНЕЛЬ ИНТЕРФЕЙСА */
+        .bottom-ui {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+            z-index: 10;
+            width: 92%;
+            max-width: 450px;
+        }
+
+        /* Огромная прокручиваемая лента цветов */
+        .palette {
+            display: flex;
+            gap: 8px;
+            background: rgba(0, 0, 0, 0.85);
+            padding: 10px 12px;
+            border-radius: 14px;
+            overflow-x: auto; /* Позволяет листать цвета пальцем */
+            width: 100%;
+            box-sizing: border-box;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            border: 1px solid #333;
+            /* Плавный скролл на смартфонах */
+            -webkit-overflow-scrolling: touch; 
+        }
+        
+        /* Прячем полосу прокрутки, чтобы было красиво */
+        .palette::-webkit-scrollbar { 
+            display: none; 
+        }
+
+        .color-dot {
+            width: 34px;
+            height: 34px;
+            border-radius: 8px;
+            flex-shrink: 0; /* Не дает кнопкам сжиматься */
+            cursor: pointer;
+            border: 2px solid transparent;
+            box-sizing: border-box;
+            transition: transform 0.1s;
+        }
+        .color-dot.active {
+            border-color: #fff;
+            transform: scale(1.15);
+            box-shadow: 0 0 10px rgba(255,255,255,0.9);
+        }
+
+        /* Кнопки управления (Зум, Пипетка) */
+        .controls {
+            display: flex;
+            gap: 12px;
+            background: rgba(0, 0, 0, 0.85);
+            padding: 8px 18px;
+            border-radius: 25px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            border: 1px solid #333;
+        }
+        .btn {
+            background: #2a2a2a;
+            color: white;
+            border: 1px solid #444;
+            padding: 8px 16px;
+            border-radius: 10px;
+            font-weight: bold;
+            font-size: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .btn:active { background: #444; }
+        
+        .btn-eyedropper { background: #2b5c8f; border-color: #3b7cbd; }
+        .btn-eyedropper.active { background: #00ffcc; color: #000; border-color: #fff; }
+    </style>
+</head>
+<body>
+
+    <div class="coords" id="coordsDisplay">X: 0, Y: 0 | Зум: 400%</div>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <div class="bottom-ui">
+        <div class="palette" id="palette"></div>
+
+        <div class="controls">
+            <button class="btn btn-eyedropper" id="eyedropperBtn">💧 Пипетка</button>
+            <button class="btn" id="zoomOut">−</button>
+            <button class="btn" id="zoomIn">+</button>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const coordsDisplay = document.getElementById('coordsDisplay');
+        const paletteContainer = document.getElementById('palette');
+        const eyedropperBtn = document.getElementById('eyedropperBtn');
+
+        const WORLD_SIZE = 1000;
+        canvas.width = WORLD_SIZE;
+        canvas.height = WORLD_SIZE;
+
+        let scale = 4;
+        let offsetX = window.innerWidth / 2 - (WORLD_SIZE * scale) / 2;
+        let offsetY = window.innerHeight / 2 - (WORLD_SIZE * scale) / 2;
+
+        let isDragging = false;
+        let startX, startY;
+        let touchStartDist = 0;
+        let touchStartX = 0, touchStartY = 0;
+        let hasMoved = false;
+
+        let isEyedropperMode = false;
+        let currentColor = '#e50000'; // Начнем с красного
+
+        // БОЛЬШОЙ НАБОР ПРОФЕССИОНАЛЬНЫХ ЦВЕТОВ (38 штук)
+        const presetColors = [
+            '#ffffff', '#e4e4e4', '#a5a5a5', '#7e7e7e', '#4e4e4e', '#222222', '#000000',
+            '#ffa7d1', '#ff5b97', '#e50000', '#990000', '#ff7816', '#e59500', '#ffd27b',
+            '#e5d900', '#ffff99', '#94e044', '#02be01', '#005f00', '#00d3dd', '#00a3a3',
+            '#0083c7', '#0000ea', '#000077', '#cf6ee4', '#820080', '#550055', '#f5dfc6',
+            '#e1b382', '#a06a42', '#633c1e', '#402008', '#2c1604', '#7df9ff', '#b4f8c8',
+            '#ffe5b4', '#ffcfdf', '#eac4d5'
+        ];
+
+        const worldData = [];
+
+        // Создание элементов палитры
+        function initPalette() {
+            paletteContainer.innerHTML = '';
+            presetColors.forEach(color => {
+                const dot = document.createElement('div');
+                dot.className = 'color-dot';
+                dot.style.backgroundColor = color;
+                
+                if (color.toLowerCase() === currentColor.toLowerCase()) {
+                    dot.classList.add('active');
+                }
+                
+                dot.addEventListener('click', () => {
+                    isEyedropperMode = false;
+                    eyedropperBtn.classList.remove('active');
+                    currentColor = color;
+                    document.querySelectorAll('.color-dot').forEach(d => d.classList.remove('active'));
+                    dot.classList.add('active');
+                });
+                paletteContainer.appendChild(dot);
+            });
+        }
+
+        function draw() {
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.setTransform(scale, 0, 0, scale, offsetX, offsetY);
+
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, WORLD_SIZE, WORLD_SIZE);
+
+            worldData.forEach(p => {
+                ctx.fillStyle = p.color;
+                ctx.fillRect(p.x, p.y, 1, 1);
+            });
+
+            const centerX = Math.floor((window.innerWidth / 2 - offsetX) / scale);
+            const centerY = Math.floor((window.innerHeight / 2 - offsetY) / scale);
+            coordsDisplay.innerText = `X: ${centerX}, Y: ${centerY} | Зум: ${Math.round(scale * 100)}%`;
+        }
+
+        function resizeCanvas() {
+            canvas.style.width = window.innerWidth + 'px';
+            canvas.style.height = window.innerHeight + 'px';
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            draw();
+        }
+        window.addEventListener('resize', resizeCanvas);
+
+        function zoomAtPoint(zoomFactor, clientX, clientY) {
+            const newScale = Math.max(0.5, Math.min(40, scale * zoomFactor));
+            if (newScale === scale) return;
+            const worldX = (clientX - offsetX) / scale;
+            const worldY = (clientY - offsetY) / scale;
+            scale = newScale;
+            offsetX = clientX - worldX * scale;
+            offsetY = clientY - worldY * scale;
+            draw();
+        }
+
+        // --- УПРАВЛЕНИЕ ---
+
+        canvas.addEventListener('touchstart', function(e) {
+            if (e.touches.length === 1) {
+                isDragging = true;
+                startX = e.touches[0].clientX - offsetX;
+                startY = e.touches[0].clientY - offsetY;
+                touchStartX = e.touches[0].clientX;
+                touchStartY = e.touches[0].clientY;
+                hasMoved = false;
+            } else if (e.touches.length === 2) {
+                isDragging = false;
+                touchStartDist = Math.hypot(
+                    e.touches[0].clientX - e.touches[1].clientX,
+                    e.touches[0].clientY - e.touches[1].clientY
+                );
+            }
+        });
+
+        canvas.addEventListener('touchmove', function(e) {
+            if (isDragging && e.touches.length === 1) {
+                const moveDist = Math.hypot(e.touches[0].clientX - touchStartX, e.touches[0].clientY - touchStartY);
+                if (moveDist > 5) {
+                    hasMoved = true;
+                }
+                offsetX = e.touches[0].clientX - startX;
+                offsetY = e.touches[0].clientY - startY;
+                draw();
+            } else if (e.touches.length === 2) {
+                const dist = Math.hypot(
+                    e.touches[0].clientX - e.touches[1].clientX,
+                    e.touches[0].clientY - e.touches[1].clientY
+                );
+                const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+                const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+                const factor = dist / touchStartDist;
+                touchStartDist = dist;
+                zoomAtPoint(factor, midX, midY);
+            }
+        });
+
+        canvas.addEventListener('touchend', function(e) {
+            if (isDragging) {
+                isDragging = false;
+
+                if (!hasMoved) {
+                    const endX = e.changedTouches[0].clientX - offsetX;
+                    const endY = e.changedTouches[0].clientY - offsetY;
+                    
+                    const worldX = Math.floor(endX / scale);
+                    const worldY = Math.floor(endY / scale);
+
+                    if (worldX >= 0 && worldX < WORLD_SIZE && worldY >= 0 && worldY < WORLD_SIZE) {
+                        
+                        if (isEyedropperMode) {
+                            const found = worldData.find(p => p.x === worldX && p.y === worldY);
+                            currentColor = found ? found.color : '#ffffff';
+                            isEyedropperMode = false;
+                            eyedropperBtn.classList.remove('active');
+                            
+                            // Перерисовываем палитру, чтобы выделить скопированный цвет, если он там есть
+                            initPalette();
+                            return;
+                        }
+
+                        const exist = worldData.find(p => p.x === worldX && p.y === worldY);
+                        if (exist) {
+                            exist.color = currentColor;
+                        } else {
+                            worldData.push({ x: worldX, y: worldY, color: currentColor });
+                        }
+                        draw();
+                    }
+                }
+            }
+        });
+
+        eyedropperBtn.addEventListener('click', () => {
+            isEyedropperMode = !isEyedropperMode;
+            eyedropperBtn.classList.toggle('active', isEyedropperMode);
+        });
+
+        document.getElementById('zoomIn').addEventListener('click', () => { zoomAtPoint(1.4, window.innerWidth / 2, window.innerHeight / 2); });
+        document.getElementById('zoomOut').addEventListener('click', () => { zoomAtPoint(1 / 1.4, window.innerWidth / 2, window.innerHeight / 2); });
+
+        // Запуск системы
+        initPalette();
+        resizeCanvas();
+    </script>
+</body>
+</html>
