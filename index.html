@@ -123,8 +123,10 @@
     <canvas id="gameCanvas"></canvas>
 
     <div class="bottom-ui">
+        <!-- Лента цветов -->
         <div class="palette" id="palette"></div>
 
+        <!-- Кнопки управления -->
         <div class="controls">
             <button class="btn btn-eyedropper" id="eyedropperBtn">💧 Пипетка</button>
             <button class="btn" id="zoomOut">−</button>
@@ -224,14 +226,13 @@
         }
         window.addEventListener('resize', resizeCanvas);
 
+        // Функция зума — теперь полностью исправлена!
         function zoomAtPoint(zoomFactor, clientX, clientY) {
             const newScale = Math.max(0.5, Math.min(40, scale * zoomFactor));
             if (newScale === scale) return;
             const worldX = (clientX - offsetX) / scale;
             const worldY = (clientY - offsetY) / scale;
             scale = newScale;
-            offsetX = clientX - worldX * scale;
-            offsetY = clientY - usage = worldY * scale;
             offsetX = clientX - worldX * scale;
             offsetY = clientY - worldY * scale;
             draw();
@@ -308,7 +309,7 @@
                         }
                         
                         draw();
-                        saveWorld(); // КРИТИЧЕСКОЕ ИЗМЕНЕНИЕ: сохраняем при каждом клике!
+                        saveWorld();
                     }
                 }
             }
